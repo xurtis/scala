@@ -74,8 +74,19 @@ serve:
 
 .PHONY: site
 site: package-build
-	@$(MAKE) -f $(MAKE_FILE) site-clean
 	@$(MAKE) -f $(MAKE_FILE) site-install
+
+.PHONY: publish
+publish: package-build
+	# Clean the current static site
+	@$(MAKE) -f $(MAKE_FILE) site-clean
+	# Install the built site
+	@$(MAKE) -f $(MAKE_FILE) site-install
+	# Commit all changes
+	@printf -- "Committing changes to site"
+	@cd "$(SITE_DIR)" && git add --all && (git diff-index --quiet HEAD || git commit -m "Update published site")
+	@printf -- "Pushing committed changes"
+	@cd "$(SITE_DIR)" && git push --force-with-lease
 
 .PHONY: site-clean
 site-clean:
@@ -83,6 +94,9 @@ site-clean:
 	@rm -rvf $(wildcard $(SITE_DIR)/*)
 
 .PHONY: site-install
+site-install: static package-install
+
+.PHONY: site-commit
 site-install: static package-install
 
 .PHONY: static
