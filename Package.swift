@@ -23,6 +23,7 @@ let package = Package(
         .executableTarget(
             name: "Scala",
             dependencies: [
+                "DomKit",
                 .product(name: "JavaScriptKit", package: "JavaScriptKit"),
             ],
             swiftSettings: [
@@ -35,6 +36,18 @@ let package = Package(
         .testTarget(
             name: "ScalaTests",
             dependencies: ["Scala"]
+        ),
+        .target(
+            name: "DomKit",
+            dependencies: [
+                .product(name: "JavaScriptKit", package: "JavaScriptKit"),
+            ],
+            swiftSettings: [
+                .enableExperimentalFeature("Extern")
+            ],
+            plugins: [
+                .plugin(name: "BridgeJS", package: "JavaScriptKit")
+            ]
         ),
     ]
 )

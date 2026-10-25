@@ -1,0 +1,15 @@
+/** Remove padding */
+html {
+	margin: 0;
+	padding: 0;
+
+	body {
+		margin: 0;
+		padding: 0;
+	}
+}
+
+/* Default Fonts */
+body {
+	font-family: Helvetica, sans-serif;
+}
