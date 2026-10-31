@@ -78,6 +78,9 @@ public protocol DOMNode: Declaration, _DOMModifierProtocol {
 }
 
 public extension DOMNode {
+    public typealias Source = ComputationInputs<Node<Self>>
+    public typealias Sync = EventOutputs<Node<Self>>
+
     /// By default make all nodes 'div'
     static var tag: String { "div" }
 

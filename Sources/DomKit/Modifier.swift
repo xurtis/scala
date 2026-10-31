@@ -13,16 +13,9 @@ public enum DOMBuilder {
     }
 
     @inline(always)
-    public static func buildExpression(
-        _ expression: StandardElement
-    ) -> StandardElement {
-        expression
-    }
-
-    @inline(always)
-    public static func buildExpression<Node: DOMNode>(
-        _ expression: Node
-    ) -> Node {
+    public static func buildExpression<Element: _DOMModifierProtocol>(
+        _ expression: Element
+    ) -> Element {
         expression
     }
 
@@ -33,12 +26,29 @@ public enum DOMBuilder {
         ClassModifier(expression)
     }
 
+    /*
+    @inline(always)
+    public static func buildExpression<Node: DOMNode>(
+        _ expression: Node
+    ) -> Node {
+        expression
+    }
+
     @inline(always)
     public static func buildExpression<Event: EventProtocol>(
         _ expression: EventHandler<Event>
     ) -> EventHandler<Event> {
         expression
     }
+
+    @inline(always)
+    public static func buildExpression(
+        _ expression: DOMModifiers
+    ) -> DOMModifiers {
+        expression
+    }
+    */
+
 
     @inline(always)
     public static func buildBlock() -> DOMModifiers {
@@ -95,6 +105,14 @@ internal extension DOMModifiers {
         _ handler: some EventHandlerProtocol
     ) {
         self.eventHandlers.append(handler)
+    }
+}
+
+extension DOMModifiers: _DOMModifierProtocol {
+    public func _addModifiers(to modifiers: inout DOMModifiers) {
+        modifiers.children.append(contentsOf: self.children)
+        modifiers.classes.formUnion(self.classes)
+        modifiers.eventHandlers.append(contentsOf: self.eventHandlers)
     }
 }
 
