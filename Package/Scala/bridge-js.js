@@ -33,6 +33,356 @@ export async function createInstantiator(options, swift) {
 
     let _exports = null;
     let bjs = null;
+    const __bjs_arrayCodecCache = new WeakMap();
+    function __bjs_arrayCodec(elementCodec) {
+        let codec = __bjs_arrayCodecCache.get(elementCodec);
+        if (codec !== undefined) {
+            return codec;
+        }
+        codec = {
+            lower(value) {
+                for (let i = 0; i < value.length; i++) {
+                    elementCodec.lower(value[i]);
+                }
+                i32Stack.push(value.length);
+            },
+            lift() {
+                const count = i32Stack.pop();
+                if (count === -1) {
+                    return taStack.pop();
+                }
+                const result = new Array(count);
+                for (let i = count - 1; i >= 0; i--) {
+                    result[i] = elementCodec.lift();
+                }
+                return result;
+            },
+        };
+        __bjs_arrayCodecCache.set(elementCodec, codec);
+        return codec;
+    }
+    const __bjs_optionalCodecCache = new WeakMap();
+    const __bjs_optionalCodecUndefinedOrCache = new WeakMap();
+    function __bjs_optionalCodec(elementCodec, isUndefinedOr = false) {
+        const cache = isUndefinedOr ? __bjs_optionalCodecUndefinedOrCache : __bjs_optionalCodecCache;
+        let codec = cache.get(elementCodec);
+        if (codec !== undefined) {
+            return codec;
+        }
+        codec = {
+            lower(value) {
+                const isSome = isUndefinedOr ? value !== undefined : value != null;
+                if (isSome) {
+                    elementCodec.lower(value);
+                    i32Stack.push(1);
+                } else {
+                    i32Stack.push(0);
+                }
+            },
+            lift() {
+                if (i32Stack.pop() === 0) {
+                    return isUndefinedOr ? undefined : null;
+                }
+                return elementCodec.lift();
+            },
+        };
+        cache.set(elementCodec, codec);
+        return codec;
+    }
+    const __bjs_dictCodecCache = new WeakMap();
+    function __bjs_dictCodec(valueCodec) {
+        let codec = __bjs_dictCodecCache.get(valueCodec);
+        if (codec !== undefined) {
+            return codec;
+        }
+        codec = {
+            lower(value) {
+                const keys = Object.keys(value);
+                for (let i = 0; i < keys.length; i++) {
+                    __bjs_stringCodec.lower(keys[i]);
+                    valueCodec.lower(value[keys[i]]);
+                }
+                i32Stack.push(keys.length);
+            },
+            lift() {
+                const count = i32Stack.pop();
+                const result = {};
+                for (let i = 0; i < count; i++) {
+                    const value = valueCodec.lift();
+                    const key = __bjs_stringCodec.lift();
+                    result[key] = value;
+                }
+                return result;
+            },
+        };
+        __bjs_dictCodecCache.set(valueCodec, codec);
+        return codec;
+    }
+
+    const __bjs_stringCodec = {
+        lower: (v) => {
+            const bytes = textEncoder.encode(v);
+            const id = swift.memory.retain(bytes);
+            i32Stack.push(bytes.length);
+            i32Stack.push(id);
+        },
+        lift: () => {
+            const string = strStack.pop();
+            return string;
+        },
+    };
+    const __bjs_primitiveCodecs = {
+        Bool: {
+            lower: (v) => {
+                i32Stack.push(v ? 1 : 0);
+            },
+            lift: () => {
+                const bool = i32Stack.pop() !== 0;
+                return bool;
+            },
+        },
+        Int: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop();
+                return int;
+            },
+        },
+        Int8: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop();
+                return int;
+            },
+        },
+        UInt8: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop() >>> 0;
+                return int;
+            },
+        },
+        Int16: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop();
+                return int;
+            },
+        },
+        UInt16: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop() >>> 0;
+                return int;
+            },
+        },
+        Int32: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop();
+                return int;
+            },
+        },
+        UInt32: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop() >>> 0;
+                return int;
+            },
+        },
+        UInt: {
+            lower: (v) => {
+                i32Stack.push((v | 0));
+            },
+            lift: () => {
+                const int = i32Stack.pop() >>> 0;
+                return int;
+            },
+        },
+        Int64: {
+            lower: (v) => {
+                i64Stack.push(v);
+            },
+            lift: () => {
+                const int = i64Stack.pop();
+                return int;
+            },
+        },
+        UInt64: {
+            lower: (v) => {
+                i64Stack.push(v);
+            },
+            lift: () => {
+                const int = i64Stack.pop();
+                return int;
+            },
+        },
+        Float: {
+            lower: (v) => {
+                f32Stack.push(Math.fround(v));
+            },
+            lift: () => {
+                const f32 = f32Stack.pop();
+                return f32;
+            },
+        },
+        Double: {
+            lower: (v) => {
+                f64Stack.push(v);
+            },
+            lift: () => {
+                const f64 = f64Stack.pop();
+                return f64;
+            },
+        },
+        String: __bjs_stringCodec,
+        JSValue: {
+            lower: (v) => {
+                const [vKind, vPayload1, vPayload2] = __bjs_jsValueLower(v);
+                i32Stack.push(vKind);
+                i32Stack.push(vPayload1);
+                f64Stack.push(vPayload2);
+            },
+            lift: () => {
+                const jsValuePayload2 = f64Stack.pop();
+                const jsValuePayload1 = i32Stack.pop();
+                const jsValueKind = i32Stack.pop();
+                const jsValue = __bjs_jsValueLift(jsValueKind, jsValuePayload1, jsValuePayload2);
+                return jsValue;
+            },
+        },
+    };
+
+    function __bjs_jsValueLower(value) {
+        let kind;
+        let payload1;
+        let payload2;
+        if (value === null) {
+            kind = 4;
+            payload1 = 0;
+            payload2 = 0;
+        } else {
+            switch (typeof value) {
+                case "boolean":
+                    kind = 0;
+                    payload1 = value ? 1 : 0;
+                    payload2 = 0;
+                    break;
+                case "number":
+                    kind = 2;
+                    payload1 = 0;
+                    payload2 = value;
+                    break;
+                case "string":
+                    kind = 1;
+                    payload1 = swift.memory.retain(value);
+                    payload2 = 0;
+                    break;
+                case "undefined":
+                    kind = 5;
+                    payload1 = 0;
+                    payload2 = 0;
+                    break;
+                case "object":
+                    kind = 3;
+                    payload1 = swift.memory.retain(value);
+                    payload2 = 0;
+                    break;
+                case "function":
+                    kind = 3;
+                    payload1 = swift.memory.retain(value);
+                    payload2 = 0;
+                    break;
+                case "symbol":
+                    kind = 7;
+                    payload1 = swift.memory.retain(value);
+                    payload2 = 0;
+                    break;
+                case "bigint":
+                    kind = 8;
+                    payload1 = swift.memory.retain(value);
+                    payload2 = 0;
+                    break;
+                default:
+                    throw new TypeError("Unsupported JSValue type");
+            }
+        }
+        return [kind, payload1, payload2];
+    }
+    function __bjs_jsValueLift(kind, payload1, payload2) {
+        let jsValue;
+        switch (kind) {
+            case 0:
+                jsValue = payload1 !== 0;
+                break;
+            case 1:
+                jsValue = swift.memory.getObject(payload1);
+                break;
+            case 2:
+                jsValue = payload2;
+                break;
+            case 3:
+                jsValue = swift.memory.getObject(payload1);
+                break;
+            case 4:
+                jsValue = null;
+                break;
+            case 5:
+                jsValue = undefined;
+                break;
+            case 7:
+                jsValue = swift.memory.getObject(payload1);
+                break;
+            case 8:
+                jsValue = swift.memory.getObject(payload1);
+                break;
+            default:
+                throw new TypeError("Unsupported JSValue kind " + kind);
+        }
+        return jsValue;
+    }
+
+    const __bjs_codec_JSElement = {
+        lower: (v) => {
+            const objId = swift.memory.retain(v);
+            i32Stack.push(objId);
+        },
+        lift: () => {
+            const objId = i32Stack.pop();
+            const obj = swift.memory.getObject(objId);
+            swift.memory.release(objId);
+            return obj;
+        },
+    };
+    const __bjs_codec_Optional_JSElement = __bjs_optionalCodec(__bjs_codec_JSElement);
+    const __bjs_codec_JSNode = {
+        lower: (v) => {
+            const objId = swift.memory.retain(v);
+            i32Stack.push(objId);
+        },
+        lift: () => {
+            const objId = i32Stack.pop();
+            const obj = swift.memory.getObject(objId);
+            swift.memory.release(objId);
+            return obj;
+        },
+    };
+    const __bjs_codec_Optional_JSNode = __bjs_optionalCodec(__bjs_codec_JSNode);
+
 
     return {
         /**
@@ -206,6 +556,234 @@ export async function createInstantiator(options, swift) {
                 return pointer || 0;
             }
             bjs["swift_js_closure_unregister"] = function(funcRef) {}
+            const DomKit = importObject["DomKit"] = importObject["DomKit"] || {};
+            DomKit["bjs_document_get"] = function bjs_document_get() {
+                try {
+                    let ret = globalThis.document;
+                    return swift.memory.retain(ret);
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_Document_body_get"] = function bjs_Document_body_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).body;
+                    return swift.memory.retain(ret);
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_Document_createElement"] = function bjs_Document_createElement(self, nameWord0, nameWord1, nameWord2) {
+                try {
+                    const string = decodeString(nameWord0, nameWord1, nameWord2);
+                    let ret = swift.memory.getObject(self).createElement(string);
+                    return swift.memory.retain(ret);
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_Document_createTextNode"] = function bjs_Document_createTextNode(self, dataWord0, dataWord1, dataWord2) {
+                try {
+                    const string = decodeString(dataWord0, dataWord1, dataWord2);
+                    let ret = swift.memory.getObject(self).createTextNode(string);
+                    return swift.memory.retain(ret);
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_Document_querySelector"] = function bjs_Document_querySelector(self, nameWord0, nameWord1, nameWord2) {
+                try {
+                    const string = decodeString(nameWord0, nameWord1, nameWord2);
+                    let ret = swift.memory.getObject(self).querySelector(string);
+                    __bjs_codec_Optional_JSElement.lower(ret);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSEventTarget_addEventListener"] = function bjs_JSEventTarget_addEventListener(self, typeWord0, typeWord1, typeWord2, listenerKind, listenerPayload1, listenerPayload2) {
+                try {
+                    const string = decodeString(typeWord0, typeWord1, typeWord2);
+                    const jsValue = __bjs_jsValueLift(listenerKind, listenerPayload1, listenerPayload2);
+                    swift.memory.getObject(self).addEventListener(string, jsValue);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSNode_firstChild_get"] = function bjs_JSNode_firstChild_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).firstChild;
+                    __bjs_codec_Optional_JSNode.lower(ret);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSNode_lastChild_get"] = function bjs_JSNode_lastChild_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).lastChild;
+                    __bjs_codec_Optional_JSNode.lower(ret);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSNode_parentElement_get"] = function bjs_JSNode_parentElement_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).parentElement;
+                    __bjs_codec_Optional_JSElement.lower(ret);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSNode_parentNode_get"] = function bjs_JSNode_parentNode_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).parentNode;
+                    __bjs_codec_Optional_JSNode.lower(ret);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSNode_appendChild"] = function bjs_JSNode_appendChild(self, node) {
+                try {
+                    swift.memory.getObject(self).appendChild(swift.memory.getObject(node));
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSNode_removeChild"] = function bjs_JSNode_removeChild(self, node) {
+                try {
+                    swift.memory.getObject(self).removeChild(swift.memory.getObject(node));
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSNode_replaceChild"] = function bjs_JSNode_replaceChild(self, oldChild, newChild) {
+                try {
+                    swift.memory.getObject(self).replaceChild(swift.memory.getObject(oldChild), swift.memory.getObject(newChild));
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSElement_classList_get"] = function bjs_JSElement_classList_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).classList;
+                    return swift.memory.retain(ret);
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_JSEvent_bubbles_get"] = function bjs_JSEvent_bubbles_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).bubbles;
+                    return ret ? 1 : 0;
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_JSEvent_cancelable_get"] = function bjs_JSEvent_cancelable_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).cancelable;
+                    return ret ? 1 : 0;
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_JSEvent_composed_get"] = function bjs_JSEvent_composed_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).composed;
+                    return ret ? 1 : 0;
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_JSEvent_type_get"] = function bjs_JSEvent_type_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).type;
+                    tmpRetBytes = textEncoder.encode(ret);
+                    return tmpRetBytes.length;
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSEvent_preventDefault"] = function bjs_JSEvent_preventDefault(self) {
+                try {
+                    swift.memory.getObject(self).preventDefault();
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSEvent_stopImmediatePropagation"] = function bjs_JSEvent_stopImmediatePropagation(self) {
+                try {
+                    swift.memory.getObject(self).stopImmediatePropagation();
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSEvent_stopPropagation"] = function bjs_JSEvent_stopPropagation(self) {
+                try {
+                    swift.memory.getObject(self).stopPropagation();
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSDOMTokenList_length_get"] = function bjs_JSDOMTokenList_length_get(self) {
+                try {
+                    let ret = swift.memory.getObject(self).length;
+                    return ret;
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_JSDOMTokenList_add"] = function bjs_JSDOMTokenList_add(self, tokenWord0, tokenWord1, tokenWord2) {
+                try {
+                    const string = decodeString(tokenWord0, tokenWord1, tokenWord2);
+                    swift.memory.getObject(self).add(string);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSDOMTokenList_remove"] = function bjs_JSDOMTokenList_remove(self, tokenWord0, tokenWord1, tokenWord2) {
+                try {
+                    const string = decodeString(tokenWord0, tokenWord1, tokenWord2);
+                    swift.memory.getObject(self).remove(string);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSDOMTokenList_contains"] = function bjs_JSDOMTokenList_contains(self, tokenWord0, tokenWord1, tokenWord2) {
+                try {
+                    const string = decodeString(tokenWord0, tokenWord1, tokenWord2);
+                    let ret = swift.memory.getObject(self).contains(string);
+                    return ret ? 1 : 0;
+                } catch (error) {
+                    setException(error);
+                    return 0
+                }
+            }
+            DomKit["bjs_JSDOMTokenList_replace"] = function bjs_JSDOMTokenList_replace(self, oldTokenWord0, oldTokenWord1, oldTokenWord2, newTokenWord0, newTokenWord1, newTokenWord2) {
+                try {
+                    const string = decodeString(oldTokenWord0, oldTokenWord1, oldTokenWord2);
+                    const string1 = decodeString(newTokenWord0, newTokenWord1, newTokenWord2);
+                    swift.memory.getObject(self).replace(string, string1);
+                } catch (error) {
+                    setException(error);
+                }
+            }
+            DomKit["bjs_JSDOMTokenList_toggle"] = function bjs_JSDOMTokenList_toggle(self, tokenWord0, tokenWord1, tokenWord2) {
+                try {
+                    const string = decodeString(tokenWord0, tokenWord1, tokenWord2);
+                    swift.memory.getObject(self).toggle(string);
+                } catch (error) {
+                    setException(error);
+                }
+            }
         },
         setInstance: (i) => {
             if (memory !== i.exports.memory) immortalStrings.clear();
