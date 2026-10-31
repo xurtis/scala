@@ -53,13 +53,13 @@ public final class Node<State: DOMNode>: AnyNode & Computation {
 
         // Add all current children
         self.modifiers = State.view(ViewSource(self))
-        self.modifiers.apply(to: self.nodeElement)
+        self.modifiers.apply(to: self.nodeElement, forNode: self)
 
         self.update()
     }
 
     override func update() {
-        /// Do nothing
+        self.modifiers.reapply(to: self.nodeElement, forNode: self)
     }
 }
 
@@ -78,8 +78,8 @@ public protocol DOMNode: Declaration, _DOMModifierProtocol {
 }
 
 public extension DOMNode {
-    public typealias Source = ComputationInputs<Node<Self>>
-    public typealias Sync = EventOutputs<Node<Self>>
+    typealias Source = ComputationInputs<Node<Self>>
+    typealias Sync = EventOutputs<Node<Self>>
 
     /// By default make all nodes 'div'
     static var tag: String { "div" }

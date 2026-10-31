@@ -46,9 +46,18 @@ where
 public protocol UpdateSubscribable<Value> {
     associatedtype Value
 
+    /// Read value from a dependent declaration context
     func readValue(
         forDependency dependency: some Recomputable
     ) -> Value
+
+    /// Read value from an event handling context
+    func readValue() -> EventValue<Value>
+}
+
+/// An ``UpdateSubscribable`` value that can be directly modified
+public protocol MutateSubscribable<Value>: UpdateSubscribable {
+    func writeValue(_ value: consuming EventValue<Value>)
 }
 
 // MARK: Updatable
@@ -77,6 +86,16 @@ internal extension Updatable {
         self.dependencies.register(dependency: dependency)
         return self.currentValue
     }
+
+    /// Read the value from an event context
+    func readValue() -> EventValue<Value> {
+        EventValue(self.currentValue)
+    }
+}
+
+public protocol Writable<Value>: Updatable {
+    /// Write the value and notify dependencies
+    mutating func writeValue(_ value: consuming EventValue<Value>)
 }
 
 // MARK: Declaration
@@ -127,8 +146,29 @@ public struct Const<ConstantValue>: Constant {
 
 // MARK: Mutable
 
+/// A value read or written from an event handling context
+public struct EventValue<Value>: ~Copyable {
+    private let value: Value
+
+    fileprivate init(_ value: consuming Value) {
+        self.value = value
+    }
+
+    fileprivate consuming func receive() -> Value {
+        self.value
+    }
+
+    fileprivate subscript<Element>(
+        _ keyPath: KeyPath<Value, Element>
+    ) -> EventValue<Element> {
+        consuming get {
+            EventValue<Element>(self.receive()[keyPath: keyPath])
+        }
+    }
+}
+
 /// A value that may be directly mutated
-public struct Mutable<Value>: Updatable {
+public struct Mutable<Value>: Writable {
     public var dependencies = UpdateDependencies()
     private var value: Value
 
@@ -146,6 +186,70 @@ public struct Mutable<Value>: Updatable {
             yield &self.value
             self.recomputeDependencies()
         }
+    }
+
+    public mutating func writeValue(
+        _ value: consuming EventValue<Value>
+    ) {
+        self.currentValue = value.receive()
+    }
+}
+
+/// A bound value from another declaration
+@dynamicMemberLookup
+public struct Bound<Value>: Constant, UpdateSubscribable {
+    let binding: any UpdateSubscribable<Value>
+
+    fileprivate init(_ binding: some UpdateSubscribable<Value>) {
+        self.binding = binding
+    }
+
+    public func readValue(
+        forDependency dependency: some Recomputable
+    ) -> Value {
+        self.binding.readValue(forDependency: dependency)
+    }
+
+    public func readValue() -> EventValue<Value> {
+        self.binding.readValue()
+    }
+
+    /// Track reads of an element
+    public subscript<Element>(
+        dynamicMember keyPath: any (KeyPath<Value, Element> & Sendable)
+    ) -> UpdateSubscribableElement<Self, Element> {
+        UpdateSubscribableElement(self, keyPath: keyPath)
+    }
+}
+
+/// A bound mutable value from another declaration
+@dynamicMemberLookup
+public struct BoundMutable<Value>: Constant, MutateSubscribable {
+    let binding: any MutateSubscribable<Value>
+
+    fileprivate init(_ binding: some MutateSubscribable<Value>) {
+        self.binding = binding
+    }
+
+    public func readValue(
+        forDependency dependency: some Recomputable
+    ) -> Value {
+        self.binding.readValue(forDependency: dependency)
+    }
+
+    public func readValue() -> EventValue<Value> {
+        self.binding.readValue()
+    }
+
+    public func writeValue(_ value: consuming EventValue<Value>) {
+        self.binding.writeValue(value)
+    }
+
+    /// Track reads of an element
+    public subscript<Element>(
+        dynamicMember keyPath: any (KeyPath<Value, Element> & Sendable)
+    ) -> UpdateSubscribableElement<Self, Element> {
+        UpdateSubscribableElement(self, keyPath: keyPath)
     }
 }
 
@@ -177,6 +281,32 @@ where
         MutableInput(
             object: self.object,
             keyPath: keyPath
+        )
+    }
+
+    /// Turn mutable memebrs into a bound member
+    @_disfavoredOverload
+    public subscript<Member: Updatable>(
+        dynamicMember keyPath: any (WritableKeyPath<Object.State, Member> & Sendable)
+    ) -> Bound<Member.Value> {
+        Bound(
+            MutableInput(
+                object: self.object,
+                keyPath: keyPath
+            )
+        )
+    }
+
+    /// Turn mutable memebrs into a bound member
+    @_disfavoredOverload
+    public subscript<Member: Writable>(
+        dynamicMember keyPath: any (WritableKeyPath<Object.State, Member> & Sendable)
+    ) -> BoundMutable<Member.Value> {
+        BoundMutable(
+            MutableInput(
+                object: self.object,
+                keyPath: keyPath
+            )
         )
     }
 
@@ -217,38 +347,51 @@ where
         self.object.state[keyPath: self.keyPath].readValue(forDependency: dependency)
     }
 
+    public func readValue() -> EventValue<Member.Value> {
+        self.object.state[keyPath: self.keyPath].readValue()
+    }
+
     /// Track reads of an element
     public subscript<Element>(
         dynamicMember keyPath: any (KeyPath<Member.Value, Element> & Sendable)
-    ) -> MutableInputElement<Object, Member, Element> {
-        MutableInputElement(
-            input: self,
-            keyPath: keyPath
-        )
+    ) -> UpdateSubscribableElement<Self, Element> {
+        UpdateSubscribableElement(self, keyPath: keyPath)
+    }
+}
+
+extension MutableInput: MutateSubscribable
+where
+    Member: Writable
+{
+    public func writeValue(_ value: consuming EventValue<Member.Value>) {
+        self.object.state[keyPath: self.keyPath].writeValue(value)
     }
 }
 
 /// Access to an element of a mutable input to computation
-public struct MutableInputElement<Object, Member, Element>: UpdateSubscribable
+public struct UpdateSubscribableElement<Subscribable, Element>: UpdateSubscribable
 where
-    Object: Computation,
-    Member: Updatable
+    Subscribable: UpdateSubscribable
 {
-    private let input: MutableInput<Object, Member>
-    private let keyPath: any (KeyPath<Member.Value, Element> & Sendable)
+    private let subscribable: Subscribable
+    private let keyPath: any (KeyPath<Subscribable.Value, Element> & Sendable)
 
     fileprivate init(
-        input: MutableInput<Object, Member>,
-        keyPath: any (KeyPath<Member.Value, Element> & Sendable)
+        _ subscribable: Subscribable,
+        keyPath: any (KeyPath<Subscribable.Value, Element> & Sendable)
     ) {
-        self.input = input
+        self.subscribable = subscribable
         self.keyPath = keyPath
     }
 
     public func readValue(
         forDependency dependency: some Recomputable
     ) -> Element {
-        self.input.readValue(forDependency: dependency)[keyPath: self.keyPath]
+        self.subscribable.readValue(forDependency: dependency)[keyPath: self.keyPath]
+    }
+
+    public func readValue() -> EventValue<Element> {
+        self.subscribable.readValue()[self.keyPath]
     }
 }
 
@@ -275,20 +418,39 @@ where
 
     /// Track reads of updatable members
     public subscript<Member: Updatable>(
-        dynamicMember path: any (KeyPath<Object.State, Member> & Sendable)
+        dynamicMember path: KeyPath<Object.State, Member>
     ) -> Member.Value {
         self.object.state[keyPath: path].currentValue
     }
 
     /// Track reads and publish writes of mutable members
-    public subscript<Value>(
-        dynamicMember path: any (WritableKeyPath<Object.State, Mutable<Value>> & Sendable)
-    ) -> Value {
-        _read {
-            yield self.object.state[keyPath: path].currentValue
+    public subscript<Member: Writable>(
+        dynamicMember path: WritableKeyPath<Object.State, Member>
+    ) -> Member.Value {
+        get {
+            self.object.state[keyPath: path].readValue().receive()
         }
-        _modify {
-            yield &self.object.state[keyPath: path].currentValue
+        set(newValue) {
+            self.object.state[keyPath: path].writeValue(EventValue(newValue))
+        }
+    }
+
+    /// Track of updatable members
+    public subscript<Member: UpdateSubscribable>(
+        dynamicMember path: KeyPath<Object.State, Member>
+    ) -> Member.Value {
+        self.object.state[keyPath: path].readValue().receive()
+    }
+
+    /// Track reads and publish writes of mutable members
+    public subscript<Member: MutateSubscribable>(
+        dynamicMember path: KeyPath<Object.State, Member>
+    ) -> Member.Value {
+        get {
+            self.object.state[keyPath: path].readValue().receive()
+        }
+        set(newValue) {
+            self.object.state[keyPath: path].writeValue(EventValue(newValue))
         }
     }
 }

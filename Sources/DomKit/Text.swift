@@ -90,8 +90,8 @@ public struct TextInterpolation: StringInterpolationProtocol {
         self.interpolations.append(interpolation)
     }
 
-    public mutating func appendInterpolation<Object, Member, Element>(
-        _ interpolation: MutableInputElement<Object, Member, Element>
+    public mutating func appendInterpolation<Subscribable, Element>(
+        _ interpolation: UpdateSubscribableElement<Subscribable, Element>
     )
     where
         Element: CustomStringConvertible
@@ -125,7 +125,7 @@ where
     Member.Value: CustomStringConvertible
 {}
 
-extension MutableInputElement: TextInterpolationElement
+extension UpdateSubscribableElement: TextInterpolationElement
 where
     Element: CustomStringConvertible
 {}

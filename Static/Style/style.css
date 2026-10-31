@@ -13,3 +13,48 @@ html {
 body {
 	font-family: Helvetica, sans-serif;
 }
+
+.app > nav {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	justify-content: start;
+	align-items: center;
+	width: 100vw;
+	height: 3em;
+	border-bottom: 1px solid #e8e8e8;
+
+	h1 {
+		margin: 6px 16px 4px 16px;
+	}
+
+	ul {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: nowrap;
+		justify-content: start;
+		margin: 0;
+		padding: 0;
+
+		li.button {
+			display: block;
+			margin: 6px;
+			padding: 8px 12px 6px 12px;
+
+			border: 1px solid #202020;
+			border-radius: 8px;
+		}
+
+		li.button:hover {
+			background: red;
+		}
+
+		li.button:active {
+			background: blue;
+		}
+
+		li.button.current {
+			background: green;
+		}
+	}
+}

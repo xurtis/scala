@@ -40,7 +40,7 @@ public struct EventHandler<Event: EventProtocol>: EventHandlerProtocol {
 
 public extension ComputationInputs {
     /// Construct an event handler
-    public func on<Event: EventProtocol>(
+    func on<Event: EventProtocol>(
         _ eventType: Event.Type,
         handler: @escaping (inout EventOutputs<Object>, Event.Event) -> Void
     ) -> EventHandler<Event> {

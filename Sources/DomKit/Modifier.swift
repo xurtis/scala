@@ -26,30 +26,6 @@ public enum DOMBuilder {
         ClassModifier(expression)
     }
 
-    /*
-    @inline(always)
-    public static func buildExpression<Node: DOMNode>(
-        _ expression: Node
-    ) -> Node {
-        expression
-    }
-
-    @inline(always)
-    public static func buildExpression<Event: EventProtocol>(
-        _ expression: EventHandler<Event>
-    ) -> EventHandler<Event> {
-        expression
-    }
-
-    @inline(always)
-    public static func buildExpression(
-        _ expression: DOMModifiers
-    ) -> DOMModifiers {
-        expression
-    }
-    */
-
-
     @inline(always)
     public static func buildBlock() -> DOMModifiers {
         DOMModifiers()
@@ -82,8 +58,13 @@ public struct DOMModifiers {
     /// Appended child nodes
     private(set) var children: [AnyNode] = []
 
+    /// Dynamic conditions
+    struct Condition {
+        let condition: (AnyNode) -> Bool
+    }
+
     /// Configured classes
-    private(set) var classes: Set<String> = []
+    private(set) var classes: [String: Condition?] = [:]
 
     /// Configured event handlers
     private(set) var eventHandlers: [any EventHandlerProtocol] = []
@@ -98,7 +79,16 @@ internal extension DOMModifiers {
     }
 
     mutating func insert(_ insertedClass: some DOMClass) {
-        self.classes.insert(insertedClass.rawValue)
+        self.classes[insertedClass.rawValue] = .some(nil)
+    }
+
+    mutating func insert(
+        _ insertedClass: some DOMClass,
+        when condition: @escaping (AnyNode) -> Bool
+    ) {
+        self.classes[insertedClass.rawValue] = Condition(
+            condition: condition
+        )
     }
 
     mutating func handle(
@@ -111,23 +101,38 @@ internal extension DOMModifiers {
 extension DOMModifiers: _DOMModifierProtocol {
     public func _addModifiers(to modifiers: inout DOMModifiers) {
         modifiers.children.append(contentsOf: self.children)
-        modifiers.classes.formUnion(self.classes)
+        modifiers.classes.merge(self.classes) { left, right in
+            guard case (nil, nil) = (left, right) else {
+                fatalError("can't have overlapping condiionals")
+            }
+
+            return nil
+        }
         modifiers.eventHandlers.append(contentsOf: self.eventHandlers)
     }
 }
 
 internal extension DOMModifiers {
-    consuming func apply(to element: some JSElementProtocol) {
+    func apply(
+        to element: some JSElementProtocol,
+        forNode node: AnyNode
+    ) {
         let element = element.asElement
 
-        let node = element.asNode
+        let elementNode = element.asNode
         for child in self.children {
-            try! node.appendChild(child.node)
+            try! elementNode.appendChild(child.node)
         }
 
         let classList = try! element.classList
-        for className in self.classes {
-            try! classList.add(className)
+        for (className, condition) in self.classes {
+            if let condition {
+                if condition.condition(node) {
+                    try! classList.add(className)
+                }
+            } else {
+                try! classList.add(className)
+            }
         }
 
         let eventTarget = element.asEventTarget
@@ -136,6 +141,26 @@ internal extension DOMModifiers {
                 handler.type,
                 handler.closure.jsValue
             )
+        }
+    }
+
+    func reapply(
+        to element: some JSElementProtocol,
+        forNode node: AnyNode
+    ) {
+        let element = element.asElement
+
+        let classList = try! element.classList
+        for (className, condition) in self.classes {
+            guard let condition else {
+                continue
+            }
+
+            if condition.condition(node) {
+                try! classList.add(className)
+            } else {
+                try! classList.remove(className)
+            }
         }
     }
 }
@@ -151,6 +176,17 @@ public protocol _DOMModifierProtocol {
 public protocol DOMClass: RawRepresentable<String> {
 }
 
+public extension DOMClass {
+    func when<Subscribable: UpdateSubscribable>(
+        _ subscribable: Subscribable,
+        condition: @escaping (Subscribable.Value) -> Bool
+    ) -> ConditionalClassModifier<Self> {
+        ConditionalClassModifier(domClass: self) { node in
+            condition(subscribable.readValue(forDependency: node))
+        }
+    }
+}
+
 public struct ClassModifier<Class: DOMClass>: _DOMModifierProtocol {
     let domClass: Class
 
@@ -160,5 +196,22 @@ public struct ClassModifier<Class: DOMClass>: _DOMModifierProtocol {
 
     public func _addModifiers(to modifiers: inout DOMModifiers) {
         modifiers.insert(self.domClass)
+    }
+}
+
+public struct ConditionalClassModifier<Class: DOMClass>: _DOMModifierProtocol {
+    private let domClass: Class
+    private let condition: (AnyNode) -> Bool
+
+    fileprivate init(
+        domClass: Class,
+        condition: @escaping (AnyNode) -> Bool
+    ) {
+        self.domClass = domClass
+        self.condition = condition
+    }
+
+    public func _addModifiers(to modifiers: inout DOMModifiers) {
+        modifiers.insert(self.domClass, when: self.condition)
     }
 }

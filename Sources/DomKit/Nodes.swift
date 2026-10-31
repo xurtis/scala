@@ -20,7 +20,11 @@ final class StandardNode: AnyNode {
         self.modifiers = element.modifiers
         super.init()
 
-        self.modifiers.apply(to: self.standardElement)
+        self.modifiers.apply(to: self.standardElement, forNode: self)
+    }
+
+    override func update() {
+        self.modifiers.reapply(to: self.standardElement, forNode: self)
     }
 }
 
@@ -61,6 +65,36 @@ public func div(
 ) -> StandardElement {
     StandardElement(
         tag: "div",
+        modifiers: modifiers()
+    )
+}
+
+public func ul(
+    @DOMBuilder
+    modifiers: () -> DOMModifiers = { DOMModifiers() }
+) -> StandardElement {
+    StandardElement(
+        tag: "ul",
+        modifiers: modifiers()
+    )
+}
+
+public func ol(
+    @DOMBuilder
+    modifiers: () -> DOMModifiers = { DOMModifiers() }
+) -> StandardElement {
+    StandardElement(
+        tag: "ol",
+        modifiers: modifiers()
+    )
+}
+
+public func li(
+    @DOMBuilder
+    modifiers: () -> DOMModifiers = { DOMModifiers() }
+) -> StandardElement {
+    StandardElement(
+        tag: "li",
         modifiers: modifiers()
     )
 }

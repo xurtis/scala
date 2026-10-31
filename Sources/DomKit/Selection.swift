@@ -28,7 +28,6 @@ fileprivate class SelectedNode<Selector: Hashable>: AnyNode {
         self.empty = try! document.createTextNode("")
         self.choices = select.choices.mapValues { modifiers in
             let element = try! document.createElement("div")
-            modifiers.apply(to: element)
 
             return Choice(
                 element: element,
@@ -37,6 +36,10 @@ fileprivate class SelectedNode<Selector: Hashable>: AnyNode {
         }
         self.selectedNode = self.empty.asNode
         super.init()
+
+        self.choices.values.forEach { choice in
+            choice.modifiers.apply(to: choice.element, forNode: self)
+        }
 
         self.update()
     }
@@ -49,6 +52,10 @@ fileprivate class SelectedNode<Selector: Hashable>: AnyNode {
         /// Update the selection
         let selection = self.source.readValue(forDependency: self)
         self.selectedNode =  self.choices[selection]?.element.asNode ?? self.empty.asNode
+
+        self.choices.values.forEach { choice in
+            choice.modifiers.apply(to: choice.element, forNode: self)
+        }
     }
 }
 
