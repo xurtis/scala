@@ -2,17 +2,15 @@ import JavaScriptKit
 
 /// Text in a DOM
 
-public struct Text: DOMElement {
+public struct Text: _DOMModifierProtocol {
     let interpolation: TextInterpolation
 
     private init(interpolation: TextInterpolation) {
         self.interpolation = interpolation
     }
 
-    public func _appendDOMChildren(to children: inout DOMChildren) {
-        children.nodes.append(
-            TextNode(interpolation: self.interpolation)
-        )
+    public func _addModifiers(to modifiers: inout DOMModifiers) {
+        modifiers.append(TextNode(interpolation: self.interpolation))
     }
 }
 
@@ -28,17 +26,17 @@ extension Text: ExpressibleByStringInterpolation {
 
 final class TextNode: AnyNode {
     private let interpolation: TextInterpolation
-    private(set) var textElement: JSValue
+    private(set) var textNode: JSText
 
-    override var element: JSValue {
-        self.textElement
+    override var node: JSNode {
+        self.textNode.asNode
     }
 
     fileprivate init(
         interpolation: TextInterpolation
     ) {
         self.interpolation = interpolation
-        self.textElement = try! document.createTextNode("")
+        self.textNode = try! document.createTextNode("")
         super.init()
 
         /// Update once to create the interpolation and subscribe
@@ -46,7 +44,7 @@ final class TextNode: AnyNode {
     }
 
     override func update() {
-        self.textElement = try! document.createTextNode(
+        self.textNode = try! document.createTextNode(
             self.interpolation.interpolate(
                 from: self
             )
@@ -83,9 +81,21 @@ public struct TextInterpolation: StringInterpolationProtocol {
         self.interpolations.append(value.description)
     }
 
-    public mutating func appendInterpolation<State: DOMNode, Value: CustomStringConvertible>(
-        _ interpolation: ValueSubscription<State, Value>
-    ) {
+    public mutating func appendInterpolation<Object, Member>(
+        _ interpolation: MutableInput<Object, Member>
+    )
+    where
+        Member.Value: CustomStringConvertible
+    {
+        self.interpolations.append(interpolation)
+    }
+
+    public mutating func appendInterpolation<Object, Member, Element>(
+        _ interpolation: MutableInputElement<Object, Member, Element>
+    )
+    where
+        Element: CustomStringConvertible
+    {
         self.interpolations.append(interpolation)
     }
 }
@@ -100,11 +110,22 @@ extension String: TextInterpolationElement {
     }
 }
 
-extension ValueSubscription: TextInterpolationElement
+extension UpdateSubscribable
 where
+    Self: TextInterpolationElement,
     Value: CustomStringConvertible
 {
     func interpolate(from node: AnyNode) -> String {
-        self.subscribe(from: node).description
+        self.readValue(forDependency: node).description
     }
 }
+
+extension MutableInput: TextInterpolationElement
+where
+    Member.Value: CustomStringConvertible
+{}
+
+extension MutableInputElement: TextInterpolationElement
+where
+    Element: CustomStringConvertible
+{}

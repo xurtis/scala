@@ -2,49 +2,65 @@
 
 import JavaScriptKit
 
-/// A `div` DOM element
-public struct Div: DOMNode {
-    public static let tag = "div"
-    public let initialChildren: DOMChildren
+/// A standard DOM node type
+final class StandardNode: AnyNode {
+    private(set) var standardElement: JSElement
 
-    public private(set) var handlers: [String: (JSValue) -> Void] = [:]
+    /// Need to hold onto modifiers to keep them in the tree
+    private let modifiers: DOMModifiers
 
-    public init(
-        @DOMBuilder
-        children: () -> DOMChildren = { DOMChildren() }
+    override var node: JSNode {
+        self.standardElement.asNode
+    }
+
+    fileprivate init(
+        _ element: StandardElement
     ) {
-        self.initialChildren = children()
-    }
+        self.standardElement = try! document.createElement(element.tag)
+        self.modifiers = element.modifiers
+        super.init()
 
-    static public func view(
-        _ source: ViewSource<Self>
-    ) -> DOMChildren {
-        source.initialChildren
-    }
-
-    public consuming func on(
-        _ event: String,
-        _ handler: @escaping (JSValue) -> Void
-    ) -> Self {
-        self.handlers[event] = handler
-        return self
+        self.modifiers.apply(to: self.standardElement)
     }
 }
 
-public struct H<let depth: Int>: DOMNode {
-    public static var tag: String { "h\(depth)" }
-    public let initialChildren: DOMChildren
+public struct StandardElement: _DOMModifierProtocol {
+    /// The tag of the element
+    let tag: String
 
-    public init(
-        @DOMBuilder
-        children: () -> DOMChildren = { DOMChildren() }
+    /// The node modifiers
+    let modifiers: DOMModifiers
+
+    fileprivate init(
+        tag: String,
+        modifiers: DOMModifiers
     ) {
-        self.initialChildren = children()
+        self.tag = tag
+        self.modifiers = modifiers
     }
 
-    static public func view(
-        _ source: ViewSource<Self>
-    ) -> DOMChildren {
-        source.initialChildren
+    public func _addModifiers(to modifiers: inout DOMModifiers) {
+        modifiers.append(StandardNode(self))
     }
+}
+
+public func h(
+    _ depth: UInt = 1,
+    @DOMBuilder
+    modifiers: () -> DOMModifiers = { DOMModifiers() }
+) -> StandardElement {
+    StandardElement(
+        tag: "h\(depth)",
+        modifiers: modifiers()
+    )
+}
+
+public func div(
+    @DOMBuilder
+    modifiers: () -> DOMModifiers = { DOMModifiers() }
+) -> StandardElement {
+    StandardElement(
+        tag: "div",
+        modifiers: modifiers()
+    )
 }
